@@ -1,13 +1,29 @@
 #!/bin/bash
-# configure-ssl-nginx.sh - Configure nginx with SSL certificates
+# configure-ssl-nginx.sh - Activate SSL in nginx configuration
 
 set -e
 
-echo "=== Configuring Nginx with SSL ==="
+echo "=== Activating SSL in Nginx ==="
+
+# Verify certificates exist
+check_cert() {
+    local domain=$1
+    if [ ! -f "./certbot/conf/live/$domain/fullchain.pem" ]; then
+        echo "❌ Certificate not found for $domain"
+        echo "Run ./ssl-setup.sh first"
+        exit 1
+    fi
+    echo "✅ Certificate found for $domain"
+}
+
+echo "Checking certificates..."
+check_cert "ai-workflow-hub.com"
+check_cert "honest-ai-reviews.com" 
+check_cert "fintech-insider.com"
 
 # Backup current nginx config
+echo "Backing up current nginx config..."
 if [ -f "nginx/conf.d/default.conf" ]; then
-    echo "Backing up current nginx config..."
     cp nginx/conf.d/default.conf nginx/conf.d/default.conf.backup.$(date +%s)
 fi
 
@@ -17,15 +33,18 @@ cat > nginx/conf.d/default.conf << 'EOF'
 # Rate limiting zones
 limit_req_zone $binary_remote_addr zone=wp_login:10m rate=1r/s;
 limit_req_zone $binary_remote_addr zone=wp_admin:10m rate=5r/s;
+limit_req_zone $binary_remote_addr zone=n8n_api:10m rate=10r/s;
 
 # HTTP to HTTPS redirect
 server {
     listen 80;
     server_name ai-workflow-hub.com www.ai-workflow-hub.com honest-ai-reviews.com www.honest-ai-reviews.com fintech-insider.com www.fintech-insider.com automation.ai-workflow-hub.com;
     
-    # Let's Encrypt challenge
-    location /.well-known/acme-challenge/ {
+    # ACME challenge for renewal
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
         root /var/www/certbot;
+        break;
     }
     
     # Redirect all HTTP to HTTPS
@@ -53,7 +72,7 @@ server {
     
     # WordPress security
     location ~ /\.ht { deny all; }
-    location ~* \.(txt|log|conf)$ { deny all; }
+    location ~* ^/(?!\.well-known/).*\.(txt|log|conf)$ { deny all; }
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     
     # Rate limiting for login
@@ -76,14 +95,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
     
-    # Static file caching
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        proxy_pass http://wordpress_ai_workflow:80;
-        proxy_set_header Host $host;
-    }
-    
     # WordPress REST API
     location ~ ^/wp-json/ {
         proxy_pass http://wordpress_ai_workflow:80;
@@ -91,6 +102,14 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Static file caching
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        proxy_pass http://wordpress_ai_workflow:80;
+        proxy_set_header Host $host;
     }
     
     # Main WordPress proxy
@@ -127,7 +146,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     
     location ~ /\.ht { deny all; }
-    location ~* \.(txt|log|conf)$ { deny all; }
+    location ~* ^/(?!\.well-known/).*\.(txt|log|conf)$ { deny all; }
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     
     location = /wp-login.php {
@@ -148,19 +167,19 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
     
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        proxy_pass http://wordpress_ai_reviews:80;
-        proxy_set_header Host $host;
-    }
-    
     location ~ ^/wp-json/ {
         proxy_pass http://wordpress_ai_reviews:80;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        proxy_pass http://wordpress_ai_reviews:80;
+        proxy_set_header Host $host;
     }
     
     location / {
@@ -196,7 +215,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     
     location ~ /\.ht { deny all; }
-    location ~* \.(txt|log|conf)$ { deny all; }
+    location ~* ^/(?!\.well-known/).*\.(txt|log|conf)$ { deny all; }
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     
     location = /wp-login.php {
@@ -217,19 +236,19 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
     
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        proxy_pass http://wordpress_fintech:80;
-        proxy_set_header Host $host;
-    }
-    
     location ~ ^/wp-json/ {
         proxy_pass http://wordpress_fintech:80;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        proxy_pass http://wordpress_fintech:80;
+        proxy_set_header Host $host;
     }
     
     location / {
@@ -263,6 +282,20 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     
+    # Rate limiting for API calls
+    location /webhook/ {
+        limit_req zone=n8n_api burst=20 nodelay;
+        proxy_pass http://n8n_automation:5678;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 300s;
+    }
+    
+    # n8n interface
     location / {
         proxy_pass http://n8n_automation:5678;
         proxy_set_header Host $host;
@@ -280,32 +313,40 @@ EOF
 
 # Test nginx configuration
 echo "Testing nginx configuration..."
-docker-compose exec nginx nginx -t
+docker compose exec nginx nginx -t
 
 if [ $? -eq 0 ]; then
-    echo "Nginx configuration is valid!"
+    echo "✅ Nginx configuration is valid!"
     
     # Reload nginx
     echo "Reloading nginx with SSL configuration..."
-    docker-compose exec nginx nginx -s reload
+    docker compose exec nginx nginx -s reload
     
-    echo "=== SSL Configuration Complete! ==="
-    echo ""
-    echo "Your sites should now be accessible via HTTPS:"
-    echo "- https://ai-workflow-hub.com"
-    echo "- https://honest-ai-reviews.com" 
-    echo "- https://fintech-insider.com"
-    echo "- https://automation.ai-workflow-hub.com"
+    echo "=== SSL Activation Complete! ==="
     echo ""
     echo "Testing HTTPS access..."
     sleep 3
     
     # Test SSL certificates
-    for domain in ai-workflow-hub.com honest-ai-reviews.com fintech-insider.com; do
+    for domain in ai-workflow-hub.com honest-ai-reviews.com fintech-insider.com automation.ai-workflow-hub.com; do
         echo "Testing https://$domain"
-        curl -I https://$domain 2>/dev/null | head -1 || echo "❌ Failed to connect to https://$domain"
+        status=$(curl -I -s -o /dev/null -w "%{http_code}" https://$domain 2>/dev/null || echo "000")
+        if [[ $status == "200" || $status == "301" || $status == "302" ]]; then
+            echo "✅ https://$domain - Status: $status"
+        else
+            echo "❌ https://$domain - Status: $status (may need time to propagate)"
+        fi
     done
+    
+    echo ""
+    echo "🎉 Your sites are now secured with HTTPS!"
+    echo "Next: Run ./setup-renewal.sh to enable automatic renewal"
 else
-    echo "❌ Nginx configuration has errors! Please check the logs."
+    echo "❌ Nginx configuration has errors!"
+    echo "Restoring backup..."
+    if [ -f "nginx/conf.d/default.conf.backup.$(date +%s)" ]; then
+        cp nginx/conf.d/default.conf.backup.* nginx/conf.d/default.conf
+        docker compose exec nginx nginx -s reload
+    fi
     exit 1
 fi

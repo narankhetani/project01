@@ -32,24 +32,24 @@ cert_exists() {
 get_certificate() {
     local domains=$1
     local primary_domain=$(echo $domains | cut -d',' -f1)
-    
+
     echo "Getting certificate for: $domains"
-    
+
     # Build domain arguments
     local domain_args=""
     IFS=',' read -ra DOMAIN_ARRAY <<< "$domains"
     for domain in "${DOMAIN_ARRAY[@]}"; do
         domain_args="$domain_args -d $domain"
     done
-    
+
     # Set staging flag if testing
     local staging_arg=""
     if [ $STAGING = 1 ]; then
         staging_arg="--staging"
     fi
-    
+
     # Request certificate
-    docker-compose run --rm certbot \
+    docker compose run --rm certbot \
         certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -81,11 +81,11 @@ cat > nginx/conf.d/temp-ssl.conf << 'EOF'
 server {
     listen 80;
     server_name ai-workflow-hub.com www.ai-workflow-hub.com honest-ai-reviews.com www.honest-ai-reviews.com fintech-insider.com www.fintech-insider.com automation.ai-workflow-hub.com;
-    
+
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
-    
+
     location / {
         return 200 "SSL certificate generation in progress...\n";
         add_header Content-Type text/plain;
@@ -95,7 +95,7 @@ EOF
 
 # Reload nginx with temporary config
 echo "Reloading nginx with temporary config..."
-docker-compose exec nginx nginx -s reload
+docker compose exec nginx nginx -s reload
 
 # Wait for nginx to reload
 sleep 3
@@ -104,7 +104,7 @@ sleep 3
 echo "Requesting SSL certificates..."
 for domain_group in "${DOMAIN_GROUPS[@]}"; do
     primary_domain=$(echo $domain_group | cut -d',' -f1)
-    
+
     if cert_exists "$primary_domain" && [ $STAGING = 0 ]; then
         echo "Certificate for $primary_domain already exists, skipping..."
     else

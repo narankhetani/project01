@@ -1,82 +1,78 @@
 #!/bin/bash
-# ssl-setup.sh - Setup Let's Encrypt SSL certificates
+# ssl-setup.sh - Complete SSL certificate setup
 
 set -e
 
 # Configuration
-DOMAINS=(
-    "ai-workflow-hub.com"
-    "www.ai-workflow-hub.com" 
-    "honest-ai-reviews.com"
-    "www.honest-ai-reviews.com"
-    "fintech-insider.com"
-    "www.fintech-insider.com"
-    "automation.ai-workflow-hub.com"
-)
+EMAIL="narankhetani+dc01.bhakti9.org@gmail.com"
+STAGING=0  # Set to 1 for testing, 0 for production
 
-EMAIL="narankhetani+@dc01.bhakti9.org@gmail.com"
-STAGING=0  # Set to 1 for testing
-
-echo "=== Let's Encrypt SSL Setup ==="
-echo "Domains: ${DOMAINS[*]}"
+echo "=== Complete SSL Certificate Setup ==="
 echo "Email: $EMAIL"
+echo "Mode: $([ $STAGING -eq 1 ] && echo 'STAGING' || echo 'PRODUCTION')"
+
+# Function to check if certificate exists
+cert_exists() {
+    local domain=$1
+    if [ -f "./certbot/conf/live/$domain/fullchain.pem" ]; then
+        echo "✅ Certificate exists for $domain"
+        return 0
+    else
+        echo "❌ No certificate found for $domain"
+        return 1
+    fi
+}
+
+# Function to check certificate expiry
+check_expiry() {
+    local domain=$1
+    if cert_exists "$domain"; then
+        local expiry=$(openssl x509 -noout -dates -in "./certbot/conf/live/$domain/fullchain.pem" | grep "notAfter" | cut -d= -f2)
+        local expiry_epoch=$(date -d "$expiry" +%s)
+        local now_epoch=$(date +%s)
+        local days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
+        
+        echo "Certificate for $domain expires in $days_left days ($expiry)"
+        
+        if [ $days_left -lt 30 ]; then
+            echo "⚠️  Certificate expires soon!"
+            return 1
+        fi
+        return 0
+    else
+        return 1
+    fi
+}
 
 # Create required directories
 echo "Creating SSL directories..."
-mkdir -p certbot/conf certbot/www
-mkdir -p nginx/ssl
+mkdir -p certbot/conf certbot/www/.well-known/acme-challenge
+chmod -R 755 certbot/
 
-# Stop nginx if running
-echo "Stopping nginx..."
-docker-compose stop nginx
-
-# Download recommended SSL configuration
+# Download SSL configuration files
 echo "Downloading SSL configuration..."
-curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf > certbot/conf/options-ssl-nginx.conf
-curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem > certbot/conf/ssl-dhparams.pem
+if [ ! -f "certbot/conf/options-ssl-nginx.conf" ]; then
+    curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf > certbot/conf/options-ssl-nginx.conf
+fi
 
-# Create temporary nginx config for certificate generation
-echo "Creating temporary nginx config..."
-cat > nginx/conf.d/temp-ssl.conf << 'EOF'
-server {
-    listen 80;
-    server_name ai-workflow-hub.com www.ai-workflow-hub.com honest-ai-reviews.com www.honest-ai-reviews.com fintech-insider.com www.fintech-insider.com automation.ai-workflow-hub.com;
-    
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-    
-    location / {
-        return 200 "Certificate generation in progress...";
-        add_header Content-Type text/plain;
-    }
-}
-EOF
-
-# Start nginx with temporary config
-echo "Starting nginx with temporary config..."
-docker-compose up -d nginx
-
-# Wait for nginx to start
-sleep 5
+if [ ! -f "certbot/conf/ssl-dhparams.pem" ]; then
+    curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem > certbot/conf/ssl-dhparams.pem
+fi
 
 # Function to get certificate
 get_certificate() {
-    local domain=$1
-    local domain_args=""
+    local domain_list=$1
+    local cert_name=$2
+    
+    echo "Getting certificate for: $domain_list"
+    echo "Certificate name: $cert_name"
     
     # Build domain arguments
-    if [[ $domain == "ai-workflow-hub.com" ]]; then
-        domain_args="-d ai-workflow-hub.com -d www.ai-workflow-hub.com -d automation.ai-workflow-hub.com"
-    elif [[ $domain == "honest-ai-reviews.com" ]]; then
-        domain_args="-d honest-ai-reviews.com -d www.honest-ai-reviews.com"
-    elif [[ $domain == "fintech-insider.com" ]]; then
-        domain_args="-d fintech-insider.com -d www.fintech-insider.com"
-    else
-        return 0  # Skip if not a primary domain
-    fi
-    
-    echo "Getting certificate for: $domain_args"
+    local domain_args=""
+    IFS=',' read -ra DOMAINS <<< "$domain_list"
+    for domain in "${DOMAINS[@]}"; do
+        domain_args="$domain_args -d $domain"
+    done
     
     # Set staging flag if testing
     local staging_arg=""
@@ -85,7 +81,7 @@ get_certificate() {
     fi
     
     # Request certificate
-    docker-compose run --rm certbot \
+    docker compose run --rm certbot \
         certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -93,41 +89,37 @@ get_certificate() {
         --email $EMAIL \
         --agree-tos \
         --no-eff-email \
+        --cert-name $cert_name \
+        --expand \
         $domain_args
 }
 
-# Get certificates for each primary domain
-echo "Requesting SSL certificates..."
-get_certificate "ai-workflow-hub.com"
-get_certificate "honest-ai-reviews.com" 
-get_certificate "fintech-insider.com"
+# Check and get certificates for each domain group
+echo "Checking/getting SSL certificates..."
 
-# Remove temporary config
-echo "Removing temporary config..."
-rm nginx/conf.d/temp-ssl.conf
+# Main domain group
+if ! check_expiry "ai-workflow-hub.com"; then
+    get_certificate "ai-workflow-hub.com,www.ai-workflow-hub.com,automation.ai-workflow-hub.com" "ai-workflow-hub.com"
+fi
 
-# Copy the SSL-enabled config
-echo "Installing SSL-enabled nginx config..."
-# You'll need to copy the SSL config from the artifact manually here
+# Reviews domain
+if ! check_expiry "honest-ai-reviews.com"; then
+    get_certificate "honest-ai-reviews.com,www.honest-ai-reviews.com" "honest-ai-reviews.com"
+fi
 
-# Restart nginx with SSL config
-echo "Restarting nginx with SSL..."
-docker-compose stop nginx
-docker-compose up -d nginx
+# Fintech domain
+if ! check_expiry "fintech-insider.com"; then
+    get_certificate "fintech-insider.com,www.fintech-insider.com" "fintech-insider.com"
+fi
 
-# Test SSL certificates
-echo "Testing SSL certificates..."
-sleep 10
+echo "=== Certificate Status ==="
+check_expiry "ai-workflow-hub.com" || true
+check_expiry "honest-ai-reviews.com" || true  
+check_expiry "fintech-insider.com" || true
 
-for domain in ai-workflow-hub.com honest-ai-reviews.com fintech-insider.com; do
-    echo "Testing https://$domain"
-    curl -I https://$domain || echo "Failed to connect to https://$domain"
-done
-
-echo "=== SSL Setup Complete ==="
-echo "Your sites should now be accessible via HTTPS!"
+echo "=== SSL Setup Complete! ==="
 echo ""
 echo "Next steps:"
-echo "1. Update Cloudflare to DNS-only (gray cloud)"
-echo "2. Test all your domains via HTTPS"
-echo "3. Set up WordPress with HTTPS URLs"
+echo "1. Run: ./configure-ssl-nginx.sh (to enable HTTPS)"
+echo "2. Set up auto-renewal: ./setup-renewal.sh"
+echo "3. Test HTTPS: curl -I https://ai-workflow-hub.com"
