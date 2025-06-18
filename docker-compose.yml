@@ -1,0 +1,263 @@
+version: '3.8'
+
+services:
+  # n8n - Core automation engine
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_automation
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n_user
+      - DB_POSTGRESDB_PASSWORD=n8n_secure_password_2025
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=SecureAdmin2025!
+      - N8N_HOST=automation.ai-workflow-hub.com
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://automation.ai-workflow-hub.com/
+      - GENERIC_TIMEZONE=Europe/London
+      - N8N_LOG_LEVEL=info
+      - N8N_METRICS=true
+      - N8N_ENCRYPTION_KEY=your_encryption_key_here_32_chars
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/backup:/backup
+    depends_on:
+      - postgres
+    networks:
+      - content_empire
+
+  # PostgreSQL for n8n
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_n8n
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=n8n
+      - POSTGRES_USER=n8n_user
+      - POSTGRES_PASSWORD=n8n_secure_password_2025
+      - POSTGRES_NON_ROOT_USER=n8n_user
+      - POSTGRES_NON_ROOT_PASSWORD=n8n_secure_password_2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/backup:/backup
+    networks:
+      - content_empire
+
+  # WordPress - AI Workflow Hub (Main site)
+  wordpress_main:
+    image: wordpress:latest
+    container_name: wordpress_ai_workflow
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - WORDPRESS_DB_HOST=mysql
+      - WORDPRESS_DB_USER=wp_main_user
+      - WORDPRESS_DB_PASSWORD=wp_main_password_2025
+      - WORDPRESS_DB_NAME=wordpress_main
+      - WORDPRESS_CONFIG_EXTRA=
+          define('WP_MEMORY_LIMIT', '512M');
+          define('WP_MAX_MEMORY_LIMIT', '512M');
+          define('WP_DEBUG', false);
+          define('WP_DEBUG_LOG', true);
+          define('AUTOMATIC_UPDATER_DISABLED', true);
+    volumes:
+      - wordpress_main_data:/var/www/html
+      - ./wordpress/main/uploads:/var/www/html/wp-content/uploads
+      - ./wordpress/main/themes:/var/www/html/wp-content/themes
+      - ./wordpress/main/plugins:/var/www/html/wp-content/plugins
+    depends_on:
+      - mysql
+    networks:
+      - content_empire
+
+  # WordPress - Honest AI Reviews
+  wordpress_reviews:
+    image: wordpress:latest
+    container_name: wordpress_ai_reviews
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      - WORDPRESS_DB_HOST=mysql
+      - WORDPRESS_DB_USER=wp_reviews_user
+      - WORDPRESS_DB_PASSWORD=wp_reviews_password_2025
+      - WORDPRESS_DB_NAME=wordpress_reviews
+      - WORDPRESS_CONFIG_EXTRA=
+          define('WP_MEMORY_LIMIT', '512M');
+          define('WP_MAX_MEMORY_LIMIT', '512M');
+          define('WP_DEBUG', false);
+          define('WP_DEBUG_LOG', true);
+          define('AUTOMATIC_UPDATER_DISABLED', true);
+    volumes:
+      - wordpress_reviews_data:/var/www/html
+      - ./wordpress/reviews/uploads:/var/www/html/wp-content/uploads
+      - ./wordpress/reviews/themes:/var/www/html/wp-content/themes
+      - ./wordpress/reviews/plugins:/var/www/html/wp-content/plugins
+    depends_on:
+      - mysql
+    networks:
+      - content_empire
+
+  # WordPress - Fintech Insider
+  wordpress_fintech:
+    image: wordpress:latest
+    container_name: wordpress_fintech
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - WORDPRESS_DB_HOST=mysql
+      - WORDPRESS_DB_USER=wp_fintech_user
+      - WORDPRESS_DB_PASSWORD=wp_fintech_password_2025
+      - WORDPRESS_DB_NAME=wordpress_fintech
+      - WORDPRESS_CONFIG_EXTRA=
+          define('WP_MEMORY_LIMIT', '512M');
+          define('WP_MAX_MEMORY_LIMIT', '512M');
+          define('WP_DEBUG', false);
+          define('WP_DEBUG_LOG', true);
+          define('AUTOMATIC_UPDATER_DISABLED', true);
+    volumes:
+      - wordpress_fintech_data:/var/www/html
+      - ./wordpress/fintech/uploads:/var/www/html/wp-content/uploads
+      - ./wordpress/fintech/themes:/var/www/html/wp-content/themes
+      - ./wordpress/fintech/plugins:/var/www/html/wp-content/plugins
+    depends_on:
+      - mysql
+    networks:
+      - content_empire
+
+  # MySQL for all WordPress sites
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_wordpress
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=mysql_root_password_2025
+      # Main site database
+      - MYSQL_DATABASE=wordpress_main
+      - MYSQL_USER=wp_main_user
+      - MYSQL_PASSWORD=wp_main_password_2025
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/backup:/backup
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - content_empire
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redis_password_2025
+    volumes:
+      - redis_data:/data
+    networks:
+      - content_empire
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/logs:/var/log/nginx
+      - wordpress_data:/var/www/html:ro
+    depends_on:
+      - wordpress
+      - n8n
+    networks:
+      - content_empire
+
+  # Grafana for monitoring (optional but recommended)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_monitoring
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=grafana_admin_2025
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - content_empire
+
+  # Watchtower for automatic updates
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower_updates
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *  # 4 AM daily
+      - WATCHTOWER_NOTIFICATIONS=email
+      - WATCHTOWER_NOTIFICATION_EMAIL_FROM=updates@yourdomain.com
+      - WATCHTOWER_NOTIFICATION_EMAIL_TO=your@email.com
+    networks:
+      - content_empire
+
+  # Backup service
+  backup:
+    image: alpine:latest
+    container_name: backup_service
+    restart: "no"
+    volumes:
+      - ./backup-scripts:/scripts
+      - wordpress_data:/backup/wordpress:ro
+      - n8n_data:/backup/n8n:ro
+      - mysql_data:/backup/mysql:ro
+      - postgres_data:/backup/postgres:ro
+      - ./backups:/output
+    command: |
+      sh -c "
+        apk add --no-cache mysql-client postgresql-client tar gzip aws-cli &&
+        chmod +x /scripts/*.sh &&
+        /scripts/backup.sh
+      "
+    networks:
+      - content_empire
+
+volumes:
+  n8n_data:
+    driver: local
+  postgres_data:
+    driver: local
+  wordpress_main_data:
+    driver: local
+  wordpress_reviews_data:
+    driver: local
+  wordpress_fintech_data:
+    driver: local
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  content_empire:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
