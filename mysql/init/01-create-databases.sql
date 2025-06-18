@@ -5,15 +5,9 @@ CREATE DATABASE IF NOT EXISTS wordpress_main CHARACTER SET utf8mb4 COLLATE utf8m
 CREATE DATABASE IF NOT EXISTS wordpress_reviews CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE IF NOT EXISTS wordpress_fintech CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Create users for each site
-CREATE USER IF NOT EXISTS 'wp_main_user'@'%' IDENTIFIED BY 'wp_main_password_2025';
-CREATE USER IF NOT EXISTS 'wp_reviews_user'@'%' IDENTIFIED BY 'wp_reviews_password_2025';
-CREATE USER IF NOT EXISTS 'wp_fintech_user'@'%' IDENTIFIED BY 'wp_fintech_password_2025';
+-- Note: Users will be created by environment variables in docker-compose.yml
+-- The MYSQL_USER and MYSQL_PASSWORD environment variables automatically create the first user
+-- Additional users for reviews and fintech sites will be created by WordPress on first setup
 
--- Grant privileges
-GRANT ALL PRIVILEGES ON wordpress_main.* TO 'wp_main_user'@'%';
-GRANT ALL PRIVILEGES ON wordpress_reviews.* TO 'wp_reviews_user'@'%';
-GRANT ALL PRIVILEGES ON wordpress_fintech.* TO 'wp_fintech_user'@'%';
-
--- Flush privileges
-FLUSH PRIVILEGES;
+-- Grant privileges for the main user (created automatically)
+-- Additional grants will be handled by WordPress setup

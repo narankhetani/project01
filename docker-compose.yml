@@ -14,18 +14,18 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
       - DB_POSTGRESDB_USER=n8n_user
-      - DB_POSTGRESDB_PASSWORD=n8n_secure_password_2025
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=SecureAdmin2025!
-      - N8N_HOST=automation.ai-workflow-hub.com
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - N8N_HOST=${N8N_DOMAIN}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://automation.ai-workflow-hub.com/
+      - WEBHOOK_URL=https://${N8N_DOMAIN}/
       - GENERIC_TIMEZONE=Europe/London
       - N8N_LOG_LEVEL=info
       - N8N_METRICS=true
-      - N8N_ENCRYPTION_KEY=your_encryption_key_here_32_chars
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n/backup:/backup
@@ -42,9 +42,9 @@ services:
     environment:
       - POSTGRES_DB=n8n
       - POSTGRES_USER=n8n_user
-      - POSTGRES_PASSWORD=n8n_secure_password_2025
+      - POSTGRES_PASSWORD=${N8N_DB_PASSWORD}
       - POSTGRES_NON_ROOT_USER=n8n_user
-      - POSTGRES_NON_ROOT_PASSWORD=n8n_secure_password_2025
+      - POSTGRES_NON_ROOT_PASSWORD=${N8N_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/backup:/backup
@@ -61,7 +61,7 @@ services:
     environment:
       - WORDPRESS_DB_HOST=mysql
       - WORDPRESS_DB_USER=wp_main_user
-      - WORDPRESS_DB_PASSWORD=wp_main_password_2025
+      - WORDPRESS_DB_PASSWORD=${WP_MAIN_PASSWORD}
       - WORDPRESS_DB_NAME=wordpress_main
       - WORDPRESS_CONFIG_EXTRA=
           define('WP_MEMORY_LIMIT', '512M');
@@ -89,7 +89,7 @@ services:
     environment:
       - WORDPRESS_DB_HOST=mysql
       - WORDPRESS_DB_USER=wp_reviews_user
-      - WORDPRESS_DB_PASSWORD=wp_reviews_password_2025
+      - WORDPRESS_DB_PASSWORD=${WP_REVIEWS_PASSWORD}
       - WORDPRESS_DB_NAME=wordpress_reviews
       - WORDPRESS_CONFIG_EXTRA=
           define('WP_MEMORY_LIMIT', '512M');
@@ -117,7 +117,7 @@ services:
     environment:
       - WORDPRESS_DB_HOST=mysql
       - WORDPRESS_DB_USER=wp_fintech_user
-      - WORDPRESS_DB_PASSWORD=wp_fintech_password_2025
+      - WORDPRESS_DB_PASSWORD=${WP_FINTECH_PASSWORD}
       - WORDPRESS_DB_NAME=wordpress_fintech
       - WORDPRESS_CONFIG_EXTRA=
           define('WP_MEMORY_LIMIT', '512M');
@@ -141,11 +141,13 @@ services:
     container_name: mysql_wordpress
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=mysql_root_password_2025
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       # Main site database
       - MYSQL_DATABASE=wordpress_main
       - MYSQL_USER=wp_main_user
-      - MYSQL_PASSWORD=wp_main_password_2025
+      - MYSQL_PASSWORD=${WP_MAIN_PASSWORD}
+      - MYSQL_CHARSET=utf8mb4
+      - MYSQL_COLLATION=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/backup:/backup
@@ -160,7 +162,7 @@ services:
     image: redis:7-alpine
     container_name: redis_cache
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass redis_password_2025
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
@@ -178,9 +180,11 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/ssl:/etc/nginx/ssl
       - ./nginx/logs:/var/log/nginx
-      - wordpress_data:/var/www/html:ro
+      - wordpress_main_data:/var/www/html:ro
     depends_on:
-      - wordpress
+      - wordpress_main
+      - wordpress_reviews
+      - wordpress_fintech
       - n8n
     networks:
       - content_empire
@@ -193,7 +197,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=grafana_admin_2025
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana_data:/var/lib/grafana
@@ -211,8 +215,8 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *  # 4 AM daily
       - WATCHTOWER_NOTIFICATIONS=email
-      - WATCHTOWER_NOTIFICATION_EMAIL_FROM=updates@yourdomain.com
-      - WATCHTOWER_NOTIFICATION_EMAIL_TO=your@email.com
+      - WATCHTOWER_NOTIFICATION_EMAIL_FROM=updates@${MAIN_DOMAIN}
+      - WATCHTOWER_NOTIFICATION_EMAIL_TO=${NOTIFICATION_EMAIL}
     networks:
       - content_empire
 
@@ -221,11 +225,19 @@ services:
     image: alpine:latest
     container_name: backup_service
     restart: "no"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - WP_MAIN_PASSWORD=${WP_MAIN_PASSWORD}
+      - WP_REVIEWS_PASSWORD=${WP_REVIEWS_PASSWORD}
+      - WP_FINTECH_PASSWORD=${WP_FINTECH_PASSWORD}
+      - N8N_DB_PASSWORD=${N8N_DB_PASSWORD}
+      - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}
     volumes:
       - ./backup-scripts:/scripts
-      - wordpress_data:/backup/wordpress:ro
+      - wordpress_main_data:/backup/wordpress/main:ro
+      - wordpress_reviews_data:/backup/wordpress/reviews:ro
+      - wordpress_fintech_data:/backup/wordpress/fintech:ro
       - n8n_data:/backup/n8n:ro
-      - mysql_data:/backup/mysql:ro
       - postgres_data:/backup/postgres:ro
       - ./backups:/output
     command: |
